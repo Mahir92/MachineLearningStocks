@@ -150,7 +150,77 @@ def forward():
     return df.replace("N/A", np.nan)
 
 
+def no_download_forward():
+    ####################
+    # Creating an empty dataframe which we will later fill. In addition to the features, we need some index variables
+    # (date, unix timestamp, ticker), and of course the dependent variables (prices).
+    df_columns = [
+        "Date",
+        "Unix",
+        "Ticker",
+        "Price",
+        "stock_p_change",
+        "SP500",
+        "SP500_p_change",
+    ] + features
+
+    df = pd.DataFrame(columns=df_columns)
+    ####################
+
+    # Retrieve a list of tickers from the fundamental data folder
+    ticker_list = os.listdir(statspath)
+
+    # Required in macOS to remove the hidden index file.
+    if ".DS_Store" in ticker_list:
+        ticker_list.remove(".DS_Store")
+
+    for ticker in tqdm(ticker_list, desc="Processing progress:", unit="tickers"):
+        try:
+            link = f"http://finance.yahoo.com/quote/{ticker.upper()}/key-statistics"
+            resp = requests.get(link)
+
+            ####################
+            source = resp.text
+            # Remove commas from the html to make parsing easier.
+            source = source.replace(",", "")
+
+            # Regex search for the different variables in the html file, then append to value_list
+            value_list = []
+            for variable in features:
+                try:
+                    # Basically, look for the first number present after we an occurence of the variable
+                    regex = (
+                        r">"
+                        + re.escape(variable)
+                        + r".*?(\-?\d+\.*\d*K?M?B?|N/A[\\n|\s]*|>0|NaN)%?"
+                        r"(</td>|</span>)"
+                    )
+                    value = re.search(regex, source, flags=re.DOTALL).group(1)
+
+                    # Dealing with number formatting
+                    value_list.append(data_string_to_float(value))
+
+                # The data may not be present. Process accordingly.
+                except AttributeError:
+                    value_list.append("N/A")
+                    # print(ticker, variable)
+
+            # Append the ticker and the features to the dataframe
+            new_df_row = [0, 0, ticker, 0, 0, 0, 0] + value_list
+
+            df = df.append(dict(zip(df_columns, new_df_row)),
+                           ignore_index=True)
+            ####################
+
+        except Exception as e:
+            print(f"{ticker}: {str(e)}\n")
+            time.sleep(2)
+
+    return df.replace("N/A", np.nan)
+
+
 if __name__ == "__main__":
-    check_yahoo()
-    current_df = forward()
+    # check_yahoo()
+    # current_df = forward()
+    current_df = no_download_forward()
     current_df.to_csv("forward_sample.csv", index=False)
